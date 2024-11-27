@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Temel fonksiyonlar
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Blog koleksiyonu kuralları
+    match /blogs/{blogId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      
+      match /comments/{commentId} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+      }
+      
+      match /reactions/{reactionId} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+      }
+    }
+    
+    // Kullanıcı koleksiyonu kuralları
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+    }
+    
+    // Şikayet koleksiyonu kuralları
+    match /reports/{reportId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == resource.data.reporterId || 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isModerator == true
+      );
+      allow create: if isAuthenticated() && 
+        // Aynı blog için aynı kullanıcıdan tekrar şikayet gelmesin
+        !exists(/databases/$(database)/documents/reports/$(reportId));
+      allow update: if isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isModerator == true;
+    }
+    
+    // Bildirim koleksiyonu kuralları
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow write: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+    }
+  }
+}
